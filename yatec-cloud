@@ -1,0 +1,34 @@
+#!/bin/sh
+
+ACTION="$1"
+PRJ="`dirname $0`"; [ "$PRJ" = "." ] && PRJ="`pwd`"
+
+if [ "$ACTION" = "start" ]; then
+    [ "`docker ps|grep ksmthub`" !=  "" ] && echo "There are other ksmthub container still running! " && exit 0 
+    $PRJ/khub start yatec-db-01
+    $PRJ/khub start yatec-db-02
+    $PRJ/khub start proxy
+    $PRJ/dbcluster yatec-db-02
+    $PRJ/dbcluster yatec-db-01
+    $PRJ/khub start yatec-node-01
+    $PRJ/khub start yatec-node-02
+elif [ "$ACTION" = "restart-web" ]; then
+    $PRJ/khub restart yatec-node-01
+    $PRJ/khub restart yatec-node-02
+elif [ "$ACTION" = "restart" ]; then
+    $0 stop
+    $0 start
+elif [ "$ACTION" = "stop" ]; then
+    $PRJ/khub stop yatec-node-02
+    $PRJ/khub stop yatec-node-01
+    $PRJ/khub stop proxy
+    $PRJ/khub stop yatec-db-01
+    $PRJ/khub stop yatec-db-02
+else 
+    echo "Usage: "
+    echo " $0  start"    
+    echo " $0  restart"    
+    echo " $0  restart-web"    
+    echo " $0  stop"    
+fi
+

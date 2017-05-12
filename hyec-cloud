@@ -1,0 +1,33 @@
+#!/bin/sh
+
+ACTION="$1"
+PRJ="`dirname $0`"; [ "$PRJ" = "." ] && PRJ="`pwd`"
+
+if [ "$ACTION" = "start" ]; then
+    [ "`docker ps|grep ksmthub`" !=  "" ] && echo "There are other ksmthub container still running! " && exit 0
+    $PRJ/khub start hyec-db-01
+    $PRJ/khub start hyec-db-02
+    $PRJ/khub start proxy
+    $PRJ/dbcluster hyec-db-02
+    $PRJ/dbcluster hyec-db-01
+    $PRJ/khub start hyec-node-01
+    $PRJ/khub start hyec-node-02
+elif [ "$ACTION" = "restart-web" ]; then
+    $PRJ/khub restart hyec-node-01
+    $PRJ/khub restart hyec-node-02
+elif [ "$ACTION" = "restart" ]; then
+    $0 stop
+    $0 start
+elif [ "$ACTION" = "stop" ]; then
+    $PRJ/khub stop hyec-node-02
+    $PRJ/khub stop hyec-node-01
+    $PRJ/khub stop proxy
+    $PRJ/khub stop hyec-db-01
+    $PRJ/khub stop hyec-db-02
+else
+    echo "Usage: "
+    echo " $0  start"
+    echo " $0  restart"
+    echo " $0  restart-web"
+    echo " $0  stop"
+fi

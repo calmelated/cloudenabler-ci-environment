@@ -1,0 +1,59 @@
+#!/bin/sh
+
+usage() {
+    echo "Usage:" 
+    echo "  $0 [set|clear] [node|db|proxy|rmq|redis]" 
+    echo ""
+    exit 0
+}
+
+setIptables() {
+    local TYPE="$1"
+    clrIptalbes "$TYPE"
+
+    if [ "$TYPE" = "node" ]; then
+        iptables -I INPUT -p tcp -m tcp --dport 80    -j ACCEPT
+        iptables -I INPUT -p tcp -m tcp --dport 443   -j ACCEPT
+    elif [ "$TYPE" = "db" ]; then
+        iptables -I INPUT -p tcp -m tcp --dport 3306 -j ACCEPT
+    elif [ "$TYPE" = "proxy" ]; then
+        iptables -I INPUT -p tcp -m tcp --dport 1936  -j ACCEPT
+    elif [ "$TYPE" = "rmq" ]; then
+        iptables -I INPUT -p tcp -m tcp --dport 5672  -j ACCEPT
+        iptables -I INPUT -p tcp -m tcp --dport 15672 -j ACCEPT
+        # iptables -I INPUT -p tcp -m tcp --dport 25672 -j ACCEPT
+    elif [ "$TYPE" = "redis" ]; then
+        sleep 0 # no yet
+    else
+        usage
+    fi
+}
+
+clrIptalbes() {
+    local TYPE="$1"
+    if [ "$TYPE" = "node" ]; then
+        iptables -D INPUT -p tcp -m tcp --dport 80    -j ACCEPT > /dev/null 2>&1
+        iptables -D INPUT -p tcp -m tcp --dport 443   -j ACCEPT > /dev/null 2>&1
+    elif [ "$TYPE" = "db" ]; then
+        iptables -D INPUT -p tcp -m tcp --dport 3306 -j ACCEPT > /dev/null 2>&1
+    elif [ "$TYPE" = "proxy" ]; then
+        iptables -D INPUT -p tcp -m tcp --dport 1936  -j ACCEPT > /dev/null 2>&1
+    elif [ "$TYPE" = "rmq" ]; then
+        iptables -D INPUT -p tcp -m tcp --dport 5672  -j ACCEPT > /dev/null 2>&1
+        iptables -D INPUT -p tcp -m tcp --dport 15672 -j ACCEPT > /dev/null 2>&1
+        # iptables -D INPUT -p tcp -m tcp --dport 25672 -j ACCEPT > /dev/null 2>&1
+    elif [ "$TYPE" = "redis" ]; then
+        sleep 0 # no yet
+    else
+        usage
+    fi
+}
+
+[ "$1" = "" -o "$2" = "" ] && usage
+if [ "$1" = "set" ]; then
+    setIptables "$2"
+elif [ "" = "clear" ]; then
+    clrIptalbes "$2"
+else 
+    usage
+fi

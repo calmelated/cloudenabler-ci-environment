@@ -1,0 +1,7 @@
+conf/haproxy.cfg
+conf/hosts
+dock-hosts/
+*.swp
+*.tmp
+.git/
+*.log

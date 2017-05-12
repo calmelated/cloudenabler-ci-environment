@@ -1,0 +1,18 @@
+#!/bin/sh
+
+PRJ="`dirname $0`"; [ "$PRJ" = "." ] && PRJ="`pwd`"
+ACTION="$1"
+
+if [ "$ACTION" = "start" ]; then
+    [ "`docker ps -q -f name=rmq-01`" = "" ] && $PRJ/khub start rmq-01
+    [ "`docker ps -q -f name=rmq-02`" = "" ] && $PRJ/khub start rmq-02
+
+    docker exec rmq-02 /khub/post-rmqcluster
+    [ "`docker ps -q -f name=proxy`" = "" ] && $PRJ/khub start proxy ||  $PRJ/khub reload proxy
+elif [ "$ACTION" = "stop" ]; then
+    $PRJ/khub stop rmq-01
+    $PRJ/khub stop rmq-02
+else
+    echo "Usage: $0 [start/stop]" && exit 0
+fi
+

@@ -1,0 +1,14 @@
+#!/bin/sh
+
+showHelp() {
+    echo "Usage: "
+    echo " $0 [db-01      |db-02      |db-03      |db-04      |db-05      |db-06      |db-07    |db-08     |db-09    ]"
+    echo " $0 [yatec-db-01|yatec-db-02|yatec-db-03|yatec-db-04|yatec-db-05|yatec-db-06]"
+    echo " $0 [hyec-db-01 |hyec-db-02 |hyec-db-03 |hyec-db-04 |hyec-db-05 |heyc-db-06 ]"
+}
+
+HOSTNAME="$1"
+[ "$1" = "" ] && showHelp && exit 0
+[ "`docker ps -q -f name=$HOSTNAME`" = "" ] && echo "Container $HOSTNAME is not running! " && exit 0
+
+docker exec $HOSTNAME /khub/post-dbcluster

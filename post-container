@@ -1,0 +1,96 @@
+#!/bin/sh
+
+KHUB=/khub
+HOSTNAME="`hostname`"
+# [ -e $KHUB/conf/hosts ] && cp -f $KHUB/conf/hosts /etc/hosts
+
+# Custmers
+CUSTOMER="ksmt"
+[ "`echo $HOSTNAME|grep hyec-`" ] && CUSTOMER="hyec"
+[ "`echo $HOSTNAME|grep yatec-`" ] && CUSTOMER="yatec"
+
+# DB Password
+ORIG_PASS="XXXXXXXXXXXXXXXXX"
+DBPASS="XXXXXXXXXXXXXXXX"
+
+# Each Container
+if [ "`echo $HOSTNAME|grep node-`" != "" ]; then
+    if [ -x /poseidon/kcloud ]; then
+        /poseidon/kcloud start > /dev/null 2>&1
+    else
+        echo "Cannot find /poseidon/kcloud !"
+    fi
+elif [ "`echo $HOSTNAME|grep db-`" != "" ]; then
+    # Configuration
+    if [ -e $KHUB/conf/wsrep.cnf.$HOSTNAME ]; then
+        [ -e /etc/myql/conf.d/wsrep.cnf ] && mv /etc/myql/conf.d/wsrep.cnf /etc/mysql/conf.d/wsrep.cnf.orig
+        cp -f $KHUB/conf/wsrep.cnf.$HOSTNAME /etc/mysql/conf.d/wsrep.cnf
+    else
+        echo "Can't find $KHUB/conf/wsrep.cnf.$HOSTNAME"
+    fi
+    if [ -e $KHUB/conf/my.cnf ]; then
+        [ -e /etc/mysql/my.cnf ] && mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
+        cp -f $KHUB/conf/my.cnf /etc/mysql/my.cnf
+    else
+        echo "Can't find $KHUB/conf/my.cnf"
+    fi
+
+    # Start DB
+    /etc/init.d/mysql bootstrap
+    # /etc/init.d/mysql restart
+
+    # Reset password for different customers
+    [ "$CUSTOMER" != "ksmt" ] && mysqladmin -uroot --password=$ORIG_PASS password $DBPASS
+    mysql --user=root --password=$DBPASS -e "GRANT ALL ON *.* to kclouddb@'172.17.%.%' IDENTIFIED BY '$DBPASS';";
+    mysql --user=root --password=$DBPASS -e "GRANT ALL PRIVILEGES ON *.* TO kclouddb@'172.17.%.%';"
+    mysql --user=root --password=$DBPASS -e "GRANT ALL ON *.* to kclouddb@'192.168.%.%' IDENTIFIED BY '$DBPASS';";
+    mysql --user=root --password=$DBPASS -e "GRANT ALL PRIVILEGES ON *.* TO kclouddb@'192.168.%.%';"
+    mysql --user=root --password=$DBPASS -e "GRANT ALL ON *.* to kclouddb@'%.hinet.net' IDENTIFIED BY '$DBPASS';";
+    mysql --user=root --password=$DBPASS -e "GRANT ALL PRIVILEGES ON *.* TO kclouddb@'%.hinet.net';"
+    mysql --user=root --password=$DBPASS -e "FLUSH PRIVILEGES;"
+
+elif [ "`echo $HOSTNAME|grep proxy`" != "" ]; then
+    if [ -e $KHUB/conf/haproxy.cfg ]; then
+        [ -e /etc/haproxy/haproxy.cfg ] && mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.orig
+        cp -f $KHUB/conf/haproxy.cfg /etc/haproxy/haproxy.cfg
+    else
+        echo "Can't find $KHUB/conf/haproxy.cfg"
+    fi
+
+    # Restart HAProxy
+    /etc/init.d/haproxy stop
+    for pid in `ps -ef|grep haproxy|grep -v grep|awk '{print $2}'` ; do kill -9 $pid ; done
+    /etc/init.d/haproxy start
+
+elif [ "`echo $HOSTNAME|grep rmq-`" != "" ]; then
+    /etc/init.d/rabbitmq-server restart
+
+    rabbitmq-plugins enable rabbitmq_management
+    rabbitmq-plugins enable rabbitmq_management_agent
+    rabbitmqctl delete_user guest
+    rabbitmqctl add_user ksmtrmq Qazxsw21
+    rabbitmqctl set_user_tags ksmtrmq administrator
+    rabbitmqctl set_permissions -p / ksmtrmq ".*" ".*" ".*"
+
+    # Set queue policy
+    rabbitmqctl set_policy ha-all '^(?!amq\.).*' '{"ha-mode": "all"}'
+    rabbitmqctl set_policy queue-expire ".*" '{"expires":300000}' --apply-to queues
+elif [ "`echo $HOSTNAME|grep redis-`" != "" ]; then
+    # Configuration
+    if [ -e $KHUB/conf/redis.conf.$HOSTNAME ]; then
+        [ -e /etc/redis/redis.conf ] && mv /etc/redis/redis.conf /etc/redis/redis.conf.orig
+        cp -f $KHUB/conf/redis.conf.$HOSTNAME /etc/redis/redis.conf
+    else
+        echo "Can't find $KHUB/conf/redis.conf.$HOSTNAME"
+    fi
+    if [ -e $KHUB/conf/sentinel.conf.$HOSTNAME ]; then
+        [ -e /etc/redis/sentinel.conf ] && mv /etc/redis/sentinel.conf /etc/redis/sentinel.conf.orig
+        cp -f $KHUB/conf/sentinel.conf.$HOSTNAME /etc/redis/sentinel.conf
+    else
+        echo "Can't find $KHUB/conf/sentinel.conf.$HOSTNAME"
+    fi
+    redis-server /etc/redis/redis.conf
+    redis-server /etc/redis/sentinel.conf --sentinel
+else
+    sleep 0
+fi

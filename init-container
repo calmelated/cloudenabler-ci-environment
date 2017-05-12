@@ -1,0 +1,13 @@
+#!/bin/sh
+
+KHUB=/khub
+HOSTNAME="`hostname`"
+
+OSVER="1604"
+[ $OSVER = "1604" ] && IFACE="eth0" || IFACE="eth0"
+IP=`ifconfig $IFACE|grep "inet addr:"|awk '{print $2}'|cut -d: -f2`
+
+mkdir -p $KHUB/dock-hosts
+echo "$IP" > $KHUB/dock-hosts/$HOSTNAME
+
+bash 

@@ -1,0 +1,12 @@
+#!/bin/sh
+
+KHUB=/khub
+PRJ="`dirname $0`"; [ "$PRJ" = "." ] && PRJ="`pwd`"
+
+[ ! -e $PRJ/conf/hosts ] && echo "No hosts file !" && exit 0
+
+for cid in `docker ps|grep ksmthub|awk '{print $1}'`;
+do
+    echo "Update /etc/hosts for $cid"
+    docker exec $cid cp $KHUB/conf/hosts /etc/hosts
+done

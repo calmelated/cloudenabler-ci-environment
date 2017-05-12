@@ -1,0 +1,32 @@
+#!/bin/sh
+
+KHUB=/khub
+HOSTNAME="`hostname`"
+
+# Custmers
+CUSTOMER="ksmt"
+[ "`echo $HOSTNAME|grep hyec-`" ] && CUSTOMER="hyec"
+[ "`echo $HOSTNAME|grep yatec-`" ] && CUSTOMER="yatec"
+
+# DB Password
+DBPASS="XXXXXXXXXXXXXXXXXXXXXXXXXX"
+[ "$CUSTOMER" = "hyec"  ] && DBPASS="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+[ "$CUSTOMER" = "yatec" ] && DBPASS="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# if [ -e $KHUB/conf/wsrep.cnf2.$HOSTNAME ]; then
+#     [ -e /etc/myql/conf.d/wsrep.cnf ] && mv /etc/myql/conf.d/wsrep.cnf /etc/mysql/conf.d/wsrep.cnf.orig
+#     cp -f $KHUB/conf/wsrep.cnf2.$HOSTNAME /etc/mysql/conf.d/wsrep.cnf
+# else
+#     echo "Can't find $KHUB/conf/wsrep.cnf2.$HOSTNAME"
+# fi
+
+# Start DB
+/etc/init.d/mysql restart
+
+# Reset password for different customers
+mysql --user=root --password=$DBPASS -e "GRANT ALL PRIVILEGES ON *.* TO cluster@'172.17.%.%';"
+mysql --user=root --password=$DBPASS -e "GRANT ALL ON *.* to cluster@'192.168.%.%' IDENTIFIED BY '$DBPASS';";
+mysql --user=root --password=$DBPASS -e "GRANT ALL PRIVILEGES ON *.* TO cluster@'192.168.%.%';"
+mysql --user=root --password=$DBPASS -e "GRANT ALL ON *.* to cluster@'%.hinet.net' IDENTIFIED BY '$DBPASS';";
+mysql --user=root --password=$DBPASS -e "GRANT ALL PRIVILEGES ON *.* TO cluster@'%.hinet.net';"
+mysql --user=root --password=$DBPASS -e "FLUSH PRIVILEGES;"

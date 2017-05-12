@@ -1,0 +1,19 @@
+#!/bin/sh
+
+KHUB=/khub
+HOSTNAME="`hostname`"
+
+# Custmers
+#CUSTOMER="ksmt"
+#[ "`echo $HOSTNAME|grep hyec-`" ] && CUSTOMER="hyec"
+#[ "`echo $HOSTNAME|grep yatec-`" ] && CUSTOMER="yatec"
+    
+rabbitmqctl stop_app
+
+if [ "${HOSTNAME##*-}" = "01" ]; then
+    rabbitmqctl join_cluster rabbit@rmq-02
+else
+    rabbitmqctl join_cluster rabbit@rmq-01
+fi
+
+rabbitmqctl start_app

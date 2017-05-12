@@ -1,0 +1,10 @@
+[MYSQLD]
+wsrep_provider=/usr/lib/galera/libgalera_smm.so
+binlog_format="row"
+wsrep_cluster_name="KCLUSTER"
+wsrep_node_address="db-09"
+wsrep_node_name="db-09"
+wsrep_cluster_address="gcomm://db-07,db-08"
+#wsrep_cluster_address="gcomm://"
+wsrep_sst_method=rsync
+wsrep_sst_auth=cluster:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX

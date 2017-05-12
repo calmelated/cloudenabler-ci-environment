@@ -1,0 +1,352 @@
+#!/bin/sh
+
+PRJ="`dirname $0`"; [ "$PRJ" = "." ] && PRJ="`pwd`"
+ACTION="$1"
+HOSTNAME="$2"
+KHUB="/khub"
+CURHOST="`hostname`"
+MOUNT_PROJECT="$HOME/poseidon:/poseidon"
+MOUNT_KHUB="$PRJ:$KHUB"
+HACONF="$PRJ/conf/haproxy.cfg"
+[ "$CURHOST" = "ci.ksmt.co" ] && MOUNT_PROJECT="/root/poseidon:/poseidon"
+
+showHelp() {
+    echo "Usage:"
+    echo " $0 [start|restart|stop] [proxy]"
+    echo " $0 [start|restart|stop] [rmq-01  |rmq-02]"
+    echo " $0 [start|restart|stop] [redis-01|redis-02    |redis-03]"
+    echo " $0 [start|restart|stop] [node-01 |hyec-node-01|yatec-node-01]"
+    echo " $0 [start|restart|stop] [node-02 |hyec-node-02|yatec-node-02]"
+    echo " $0 [start|restart|stop] [db-01   |hyec-db-01  |yatec-db-01  ]"
+    echo " $0 [start|restart|stop] [db-02   |hyec-db-02  |yatec-db-02  ]"
+    echo " $0 [start|restart|stop] [db-03   |hyec-db-03  |yatec-db-03  ]"
+    echo " $0 [start|restart|stop] [db-04   |hyec-db-04  |yatec-db-04  ]"
+    echo " $0 [start|restart|stop] [db-05   |hyec-db-05  |yatec-db-05  ]"
+    echo " $0 [start|restart|stop] [db-06   |hyec-db-06  |yatec-db-06  ]"
+    echo ""
+}
+
+chkLogin() {
+    local name="$1"
+    [ "`docker images|grep ${name%%:*}`" = "" ] && echo "Can't find image locally .... " || return
+    if [ ! -e ~/.dockercfg ]; then
+        echo "Please login docker to checkout images! "
+        docker login
+        [ $? != 0 ] && echo "Login failed! " && exit 0
+    else
+        # Already login
+        sleep 0
+    fi
+}
+
+updateProxy() {
+    cat $PRJ/conf/haproxy.basic > $HACONF
+
+    #######################################################################################################
+    #   Parsing dock-hosts
+    #######################################################################################################
+    local useWeb=0
+    local useRMQ=0
+    local useDB=0
+    local useRedis=0
+    local webList=""
+    local rmqList=""
+    local redisList=""
+    local dbList=""
+    for f in $PRJ/dock-hosts/*; do
+        hname=${f##*/}
+        if [ "`echo $f|grep node-`" != "" ]; then
+            useWeb=1
+            webList="$webList $hname=`cat $f`"
+        elif [ "`echo $f|grep db-`" != "" ]; then
+            useDB=1
+            dbList="$dbList $hname=`cat $f`"
+        elif [ "`echo $f|grep rmq-`" != "" ]; then
+            useRMQ=1
+            rmqList="$rmqList $hname=`cat $f`"
+        elif [ "`echo $f|grep redis-`" != "" ]; then
+            useRedis=1
+            redisList="$redisList $hname=`cat $f`"
+        fi
+    done
+
+    #######################################################################################################
+    #   Web Services
+    #######################################################################################################
+    if [ $useWeb = 1 ]; then
+        echo "
+frontend HTTP
+    bind :80
+    mode http
+    default_backend HTTP-Nodes
+
+backend HTTP-Nodes
+    mode http
+    option forwardfor
+    http-request set-header X-Forwarded-Port %[dst_port]
+    http-request add-header X-Forwarded-Proto https if { ssl_fc }
+    cookie SERVERID insert indirect nocache
+    option httpchk GET /
+    http-check expect rstatus 2..|3..|401
+    balance leastconn" >> $HACONF
+
+        for web in $webList; do
+            host=${web%%=*}
+            hostip=${web##*=}
+            echo "    server $host  $hostip:80 weight 1 check cookie $host" >> $HACONF
+        done
+
+        echo "
+listen HTTP2
+    bind *:443 alpn h2,http/1.1
+    mode tcp
+    http-request add-header X-Forwarded-Proto https" >> $HACONF
+
+        for web in $webList; do
+            host=${web%%=*}
+            hostip=${web##*=}
+            echo "    server $host  $hostip:443 weight 1 check" >> $HACONF
+        done
+    fi
+
+    #######################################################################################################
+    # Database
+    #######################################################################################################
+    if [ $useDB = 1 ]; then
+        echo "
+listen DB-Read
+    bind *:65506
+    mode tcp
+    balance leastconn" >> $HACONF
+
+        for db in $dbList; do
+            host=${db%%=*}
+            hostip=${db##*=}
+            num=${host##*-}
+            if [ "$num" = "01" -o "$num" = "02" -o "$num" = "03" ]; then
+                echo "    server $host $hostip:3306 check" >> $HACONF
+            fi
+        done
+
+        echo "
+listen DB-Write
+    bind *:65507
+    mode tcp
+    balance leastconn" >> $HACONF
+
+        for db in $dbList; do
+            host=${db%%=*}
+            hostip=${db##*=}
+            num=${host##*-}
+            if [ "$num" = "01" -o "$num" = "04" -o "$num" = "07" ]; then
+                echo "    server $host $hostip:3306 check" >> $HACONF
+            elif [ "$num" = "02" -o "$num" = "05" -o "$num" = "08" ]; then # backup 1
+                echo "    server $host $hostip:3306 check backup" >> $HACONF
+            elif [ "$num" = "03" -o "$num" = "06" -o "$num" = "09" ]; then # backup 2
+                echo "    server $host $hostip:3306 check backup" >> $HACONF
+            else
+                sleep 0
+            fi
+        done
+    fi
+
+    #######################################################################################################
+    # RabbitMQ
+    #######################################################################################################
+    if [ $useRMQ = 1 ]; then
+        echo "
+listen RMQ
+    bind *:5672
+    mode tcp
+    balance leastconn
+    timeout client  3h
+    timeout server  3h
+    option  clitcpka" >> $HACONF
+
+        for rmq in $rmqList; do
+            host=${rmq%%=*}
+            hostip=${rmq##*=}
+            echo "    server $host $hostip:5672 check" >> $HACONF
+        done
+
+        echo "
+listen RMQ-WEB
+    bind *:15672
+    mode tcp
+    balance leastconn" >> $HACONF
+
+        for rmq in $rmqList; do
+            host=${rmq%%=*}
+            hostip=${rmq##*=}
+            echo "    server $host $hostip:15672 check" >> $HACONF
+        done
+    fi
+
+    #######################################################################################################
+    # Redis
+    #######################################################################################################
+    if [ $useRedis = 1 ]; then
+        echo "
+listen Redis-Master
+    bind *:6380
+    mode tcp
+    balance leastconn
+    option tcp-check
+    tcp-check send AUTH\ fMW6jZstkq2vJe5sqPYDXunRJMz94gdcuaz5VEMyMJLhcVwGGXJ8B3zMhTkyUNtH\r\n\r\n
+    tcp-check send info\ replication\r\n
+    tcp-check expect string role:master
+    " >> $HACONF
+
+        for redis in $redisList; do
+            host=${redis%%=*}
+            hostip=${redis##*=}
+            num=${host##*-}
+            if [ "$num" = "01" -o "$num" = "04" ]; then
+                echo "    server $host $hostip:6379 check" >> $HACONF
+            elif [ "$num" = "02" -o "$num" = "05" ]; then # backup 1
+                echo "    server $host $hostip:6379 check backup" >> $HACONF
+            elif [ "$num" = "03" -o "$num" = "06" ]; then # backup 2
+                echo "    server $host $hostip:6379 check backup" >> $HACONF
+            else
+                sleep 0
+            fi
+        done
+
+        echo "
+listen Redis-Read
+    bind *:6379
+    mode tcp
+    balance leastconn
+    option tcp-check
+    tcp-check send AUTH\ fMW6jZstkq2vJe5sqPYDXunRJMz94gdcuaz5VEMyMJLhcVwGGXJ8B3zMhTkyUNtH\r\n\r\n
+    tcp-check send PING\r\n
+    tcp-check expect string +PONG
+    " >> $HACONF
+
+        for redis in $redisList; do
+            host=${redis%%=*}
+            hostip=${redis##*=}
+            echo "    server $host $hostip:6379 check" >> $HACONF
+        done
+    fi
+}
+
+updateHosts() {
+    echo "127.0.0.1 localhost"   > $PRJ/conf/hosts.tmp
+    for f in $PRJ/dock-hosts/* ; do
+        echo "`cat $f`" ${f##*/dock-hosts/} >> $PRJ/conf/hosts.tmp
+    done
+    echo "" >> $PRJ/conf/hosts.tmp
+    echo "# The following lines are desirable for IPv6 capable hosts" >> $PRJ/conf/hosts.tmp
+    echo "::1     localhost ip6-localhost ip6-loopback"               >> $PRJ/conf/hosts.tmp
+    echo "ff02::1 ip6-allnodes"     >> $PRJ/conf/hosts.tmp
+    echo "ff02::2 ip6-allrouters"   >> $PRJ/conf/hosts.tmp
+    uniq $PRJ/conf/hosts.tmp > $PRJ/conf/hosts
+    rm -f $PRJ/conf/hosts.tmp
+    $PRJ/khub-hosts
+}
+
+[ `id -u` != 0 ] && echo "The command is root only! " && exit 0
+[ ! -x "`which docker`" ] && echo "Can't find docker command! " && exit 0
+[ ! -x $PRJ/khub ] && echo "Can't find $PRJ/khub command !" && exit 0
+[ ! -x $HOME/poseidon/kcloud ] && echo "Can't find $HOME/poseidon/kcloud! Did you git clone the project? " && exit 0
+[ "$ACTION" = "" ] && showHelp && exit 0;
+[ "$HOSTNAME" = "" ] && showHelp && exit 0;
+PROXY_RUNNING="`docker ps|grep ksmthub0/haproxy`"
+
+
+# Which DOCK_IMAGES
+if [ "`echo $HOSTNAME|grep node-`" ]; then
+    DOCK_IMAGES="ksmthub3/node1604"
+elif [ "`echo $HOSTNAME|grep dbs-`" ]; then
+    DOCK_IMAGES="ksmthub1/mariadb:saved"
+elif [ "`echo $HOSTNAME|grep db-`" ]; then
+    DOCK_IMAGES="ksmthub1/mariadb"
+    [ "`docker images|grep ksmthub1/mariadb|grep saved`" != "" ] && DOCK_IMAGES="ksmthub1/mariadb:saved"
+    # [ "$HOSTNAME" = "db-01" -a "`docker images|grep ksmthub1/mariadb|grep saved`" != "" ] && DOCK_IMAGES="ksmthub1/mariadb:saved"
+elif [ "$HOSTNAME" = "proxy" ]; then
+    DOCK_IMAGES="ksmthub0/haproxy"
+elif [ "`echo $HOSTNAME|grep rmq-`" ]; then
+    DOCK_IMAGES="ksmthub5/rmq"
+elif [ "`echo $HOSTNAME|grep redis-`" ]; then
+    DOCK_IMAGES="ksmthub4/redis"
+else
+    echo "Unknown container $HOSTNAME"
+    exit 0
+fi
+
+# Start/Stop container
+if [ "`docker ps|grep $HOSTNAME`" = "" ]; then
+    if [ "$ACTION" = "stop" ]; then
+        [ -e $PRJ/dock-hosts/$HOSTNAME ] && rm -f $PRJ/dock-hosts/$HOSTNAME
+        echo "$HOSTNAME already stopped! "
+        exit 0
+    else
+        echo "Start container $HOSTNAME"
+        chkLogin $DOCK_IMAGES
+
+        docker rm -f $HOSTNAME > /dev/null 2>&1
+        if [ "$DOCK_IMAGES" = "ksmthub3/node1604" ]; then
+            docker run -dit -v $MOUNT_PROJECT -v $MOUNT_KHUB -h $HOSTNAME --name=$HOSTNAME -p 80 $DOCK_IMAGES bash -c "$KHUB/init-container"
+        elif [ "$DOCK_IMAGES" = "ksmthub1/mariadb" ]; then
+            docker run -dit -v $MOUNT_KHUB -h $HOSTNAME --name=$HOSTNAME -p 3306 $DOCK_IMAGES bash -c "$KHUB/init-container"
+        elif [ "$DOCK_IMAGES" = "ksmthub1/mariadb:saved" ]; then
+            docker run -dit -v $MOUNT_KHUB -h $HOSTNAME --name=$HOSTNAME -p 3306 $DOCK_IMAGES bash -c "$KHUB/init-container"
+        elif [ "$DOCK_IMAGES" = "ksmthub0/haproxy" ]; then
+            OPENPORT="-p 1936:1936"
+            OPENPORT="$OPENPORT -p 5672:5672"
+            OPENPORT="$OPENPORT -p 15672:15672"
+            OPENPORT="$OPENPORT -p 3306:3306"
+            OPENPORT="$OPENPORT -p 3307:3307"
+            OPENPORT="$OPENPORT -p 6379:6379"
+            OPENPORT="$OPENPORT -p 6380:6380"
+            if [ "$CURHOST" = "ci.ksmt.co" ]; then
+                OPENPORT="$OPENPORT -p 8082:80"
+            else
+                OPENPORT="$OPENPORT -p 80:80"
+                OPENPORT="$OPENPORT -p 443:443"
+            fi
+            docker run -dit -v $MOUNT_KHUB -h $HOSTNAME --name=$HOSTNAME $OPENPORT $DOCK_IMAGES bash -c "$KHUB/init-container"
+        elif [ "$DOCK_IMAGES" = "ksmthub5/rmq" ]; then
+            docker run -dit -v $MOUNT_KHUB -h $HOSTNAME --name=$HOSTNAME -p 5672 -p 15672 $DOCK_IMAGES bash -c "$KHUB/init-container"
+        elif [ "$DOCK_IMAGES" = "ksmthub4/redis" ]; then
+            docker run -dit -v $MOUNT_KHUB -h $HOSTNAME --name=$HOSTNAME -p 6379 -p 26379 $DOCK_IMAGES bash -c "$KHUB/init-container"
+        else
+            echo "Unkown $DOCK_IMAGES !"
+            exit 0
+        fi
+
+        # Post actions
+        sleep 3
+        updateHosts
+        updateProxy
+        [ "$PROXY_RUNNING" != "" -a "$HOSTNAME" != "proxy" ] && docker exec proxy $KHUB/post-container
+        docker exec $HOSTNAME $KHUB/post-container
+    fi
+else # container is running
+    if [ "$ACTION" = "stop" ]; then
+        for cid in "`docker ps |grep $HOSTNAME|grep :saved|awk '{print $1}'`"; do
+            if [ "$cid" != "" ]; then
+                echo "Saved container $HOSTNAME (id=$cid) !"
+                docker commit $cid $DOCK_IMAGES
+            fi
+        done
+        for cid in "`docker ps|grep $HOSTNAME|awk '{print $1}'`"; do
+            echo "Killed container $HOSTNAME (id=$cid) !"
+            docker rm -f $cid
+        done
+        [ -e $PRJ/dock-hosts/$HOSTNAME ] && rm -f $PRJ/dock-hosts/$HOSTNAME
+        exit 0
+    elif [ "$ACTION" = "restart" ]; then
+        $0 stop $2 $3
+        $0 start $2 $3
+    elif [ "$ACTION" = "reload" ]; then
+        updateHosts
+        updateProxy
+        [ "$PROXY_RUNNING" != "" -a "$HOSTNAME" != "proxy" ] && docker exec proxy $KHUB/post-container
+        docker exec $HOSTNAME $KHUB/post-container
+    else
+        echo "$HOSTNAME already run! "
+        exit 0
+    fi
+fi

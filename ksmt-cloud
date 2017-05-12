@@ -1,0 +1,64 @@
+#!/bin/sh
+
+ACTION="$1"
+PRJ="`dirname $0`"; [ "$PRJ" = "." ] && PRJ="`pwd`"
+
+if [ "$ACTION" = "start" ]; then
+    $PRJ/khub start db-01
+    $PRJ/khub start db-02
+    # $PRJ/khub start db-03
+    $PRJ/khub start db-04
+    $PRJ/khub start db-07
+    $PRJ/khub start proxy
+    # $PRJ/dbcluster db-03
+    $PRJ/dbcluster db-02
+    $PRJ/dbcluster db-01
+    $PRJ/khub start node-01
+    $PRJ/khub start node-02
+elif [ "$ACTION" = "dbs2" ]; then
+    $PRJ/khub start db-04
+    #$PRJ/khub start db-05
+    #$PRJ/khub start db-06
+    $PRJ/dbcluster db-04
+    #$PRJ/dbcluster db-05
+    #$PRJ/dbcluster db-06
+elif [ "$ACTION" = "dbs3" ]; then
+    $PRJ/khub start db-07
+    #$PRJ/khub start db-08
+    #$PRJ/khub start db-09
+    $PRJ/dbcluster db-07
+    #$PRJ/dbcluster db-08
+    #$PRJ/dbcluster db-09
+elif [ "$ACTION" = "debug" ]; then
+    echo > $PRJ/kcloud.log
+    docker exec -dit node-01 bash -c '/poseidon/kcloud debug >> /khub/kcloud.log'
+    docker exec -dit node-02 bash -c '/poseidon/kcloud debug >> /khub/kcloud.log'
+    tailf $PRJ/kcloud.log
+elif [ "$ACTION" = "jenkins" ]; then
+    echo > $PRJ/kcloud.log
+    docker exec -dit node-01 bash -c '/poseidon/kcloud debug >> /khub/kcloud.log'
+    docker exec -dit node-02 bash -c '/poseidon/kcloud debug >> /khub/kcloud.log'
+elif [ "$ACTION" = "restart-web" ]; then
+    docker exec node-01 /poseidon/kcloud start
+    docker exec node-02 /poseidon/kcloud start
+    #$PRJ/khub reload node-01
+    #$PRJ/khub reload node-02
+elif [ "$ACTION" = "restart" ]; then
+    $0 stop
+    $0 start
+elif [ "$ACTION" = "stop" ]; then
+    $PRJ/khub stop node-02
+    $PRJ/khub stop node-01
+    $PRJ/khub stop proxy
+    $PRJ/khub stop db-01
+    $PRJ/khub stop db-02
+    # $PRJ/khub stop db-03
+    $PRJ/khub stop db-04
+    $PRJ/khub stop db-07
+else
+    echo "Usage: "
+    echo " $0  start"
+    echo " $0  restart"
+    echo " $0  restart-web"
+    echo " $0  stop"
+fi
