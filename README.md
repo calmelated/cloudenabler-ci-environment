@@ -5,8 +5,19 @@ Using multiple containers/dockers on a Linux machine to create a continuous inte
  - Install `docker` on your computer. e.g.  `curl -sSL https://get.docker.com | sudo sh` on Linux
  - `git clone` this project
  - Use `ksmt-cloud` command to start the testing environment
- - Use `khub` to start/stop indvidual nodejs/db/proxy/redis/rabbit-mq sever
- 
+ - Use `khub` command to start/stop indvidual nodejs/db/proxy/redis/rabbit-mq server
+
+## Server Architecture
+
+```
+API Requests              <->  Node.js 01    <-> Cluster 01  <-> MariaDB 01 + MariaDB 02 + MariaDB 03
+ ------>        HAProxy   <->                <-> Cluster 02  <-> MariaDB 04 + MariaDB 05 + MariaDB 06
+                          <->  Node.js 02    <-> Cluster 03  <-> MariaDB 07 + MariaDB 08 + MariaDB 09
+                                .....             ....           ...
+                          <->  Node.js 0x    <-> Cluster 0x  <-> ...
+                          <->  Node.js 0x    <-> Cluster 0x  <-> ...
+```
+
 ## Usage
 
 ```sh
