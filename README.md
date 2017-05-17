@@ -2,7 +2,8 @@
 The purpose of the CloudEnabler project is aim to help those factory facilities, which don't have the network accessibility, to be accessed by users' smartphone or computer from anywhere.
 
 # cloudenabler-ci-environment
-To the quality of RESTful service and make sure the test is close to the real production environment, this project used multiple containers/dockers on a Linux machine to create a continuous integration environment for Mocha testing 
+To make sure the test is close to the real production environment.
+Also, for the quality of RESTful service. This project used multiple containers/dockers on a Linux machine to create a continuous integration environment for Mocha testing 
 
 ## Prerequisite
  - Install `docker` on your computer. e.g.  `curl -sSL https://get.docker.com | sudo sh` on Linux
